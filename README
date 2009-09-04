@@ -17,11 +17,21 @@ of each ActiveRecord model source file:
   
    . . .
   
-Note that this code will blow away the initial comment block in your models if it looks ike it was
-previously added by annotate models, so you don't want to add additional text to an automatically
-created comment block.
+This code will try to insert the schema comment block just before the first "class" line it finds, 
+so that your own model comments will remain at the top. This version uses an "End Schema" to 
+help in updating only the schema section of the comment without blowing everything else away.
 
-Author:
+This version will also look for fixtures under both the test and spec directories.
+
+This version will also scan into subdirectories of the app/models directory in case you've 
+named-spaced your models.
+
+Modified by:
+   Jason LaPier
+   http://offtheline.net
+   http://skipintrodevelopment.com
+
+Original Author:
    Dave Thomas
    Pragmatic Programmers, LLC
    

@@ -1,14 +1,14 @@
 require "config/environment"
 
 MODEL_DIR   = File.join(RAILS_ROOT, "app/models")
-FIXTURE_DIR = File.join(RAILS_ROOT, "test/fixtures")
-RSPEC_DIR   = File.join(RAILS_ROOT, "spec/models")
-RSPEC_FIXTURES = File.join(RAILS_ROOT, "spec/fixtures")
+SPEC_FIXTURE_DIR = File.join(RAILS_ROOT, "spec/fixtures")
+TEST_FIXTURE_DIR = File.join(RAILS_ROOT, "test/fixtures")
 
 module AnnotateModels
 
   PREFIX = "== Schema Information"
-  
+  POSTFIX = "End Schema"
+
   # Simple quoting for the default column value
   def self.quote(value)
     case value
@@ -22,7 +22,7 @@ module AnnotateModels
         value.inspect
     end
   end
-
+  
   # Use the column information in an ActiveRecord class
   # to create a comment block containing a line for
   # each column. The line contains the column name,
@@ -44,11 +44,10 @@ module AnnotateModels
       else
         col_type << "(#{col.limit})" if col.limit
       end 
-      info << sprintf("#  %-#{max_size}.#{max_size}s:%-15.15s %s", col.name, col_type, attrs.join(", ")).rstrip
-      info << "\n"
+      info << sprintf("#  %-#{max_size}.#{max_size}s:%-13.13s %s\n", col.name, col_type, attrs.join(", "))
     end
 
-    info << "#\n\n"
+    info << "# #{POSTFIX}\n\n"
   end
 
   # Add a schema block to a file. If the file already contains
@@ -60,10 +59,21 @@ module AnnotateModels
       content = File.read(file_name)
 
       # Remove old schema info
-      content.sub!(/^# #{PREFIX}.*?\n(#.*\n)*\n/, '')
+      content.sub!(/^# #{PREFIX}.*?\n(#.*\n)*# #{POSTFIX}\n\n/, '')
 
+      # put schema after any other stuff
+      if content =~ /class/
+        head, main = content.split('class',2)
+        main = "class" + main
+      else
+        head = ""
+        main = content
+      end
+      
       # Write it back
-      File.open(file_name, "w") { |f| f.puts info_block + content }
+      File.open(file_name, "w") { |f| f.puts head + info_block + main }
+    else
+      puts "Could not find #{file_name}"
     end
   end
   
@@ -72,23 +82,15 @@ module AnnotateModels
   # on the columns and their types) and put it at the front
   # of the model and fixture source files.
 
-  def self.annotate(klass, header)
+  def self.annotate(klass, header, model_file)
     info = get_schema_info(klass, header)
     
-    model_file_name = File.join(MODEL_DIR, klass.name.underscore + ".rb")
-    annotate_one_file(model_file_name, info)
-    
-    if File.join(RAILS_ROOT, "spec")
-      rspec_file_name = File.join(RSPEC_DIR, klass.name.underscore + "_spec.rb")
-      annotate_one_file(rspec_file_name, info)
-      
-      rspec_fixture = File.join(RSPEC_FIXTURES, klass.table_name + ".yml")
-      annotate_one_file(rspec_fixture, info)
-    end
+    annotate_one_file(File.join(MODEL_DIR, model_file), info)
 
-    Dir.glob(File.join(FIXTURE_DIR, "**", klass.table_name + ".yml")) do | fixture_file_name |
-      annotate_one_file(fixture_file_name, info)
-    end
+    test_fixture_file_name = File.join(TEST_FIXTURE_DIR, klass.table_name + ".yml")
+    annotate_one_file(test_fixture_file_name, info) if File.exists?(test_fixture_file_name)
+    spec_fixture_file_name = File.join(SPEC_FIXTURE_DIR, klass.table_name + ".yml")
+    annotate_one_file(spec_fixture_file_name, info) if File.exists?(spec_fixture_file_name)
   end
 
   # Return a list of the model files to annotate. If we have 
@@ -118,22 +120,22 @@ module AnnotateModels
     version = ActiveRecord::Migrator.current_version rescue 0
     if version > 0
       header << "\n# Schema version: #{version}"
-    end
-    
+    end 
+
     self.get_model_names.each do |m|
-      class_name = m.sub(/\.rb$/,'').camelize
+      class_name = File.basename(m).sub(/\.rb$/,'').camelize
       begin
         klass = class_name.split('::').inject(Object){ |klass,part| klass.const_get(part) }
         if klass < ActiveRecord::Base && !klass.abstract_class?
           puts "Annotating #{class_name}"
-          self.annotate(klass, header)
+          self.annotate(klass, header, m)
         else
           puts "Skipping #{class_name}"
         end
       rescue Exception => e
         puts "Unable to annotate #{class_name}: #{e.message}"
       end
-      
+
     end
   end
 end
